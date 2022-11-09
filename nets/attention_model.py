@@ -148,6 +148,9 @@ class AttentionModel(nn.Module):
     def beam_search(self, *args, **kwargs):
         return self.problem.beam_search(*args, **kwargs, model=self)
 
+    def mcts(self, *args, **kwargs):
+        return self.problem.mcts(*args, **kwargs, model=self)
+
     def precompute_fixed(self, input):
         embeddings, _ = self.embedder(self._init_embed(input))
         # Use a CachedLookup such that if we repeatedly index this object with the same index we only need to do

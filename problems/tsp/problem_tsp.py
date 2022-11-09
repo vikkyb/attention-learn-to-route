@@ -4,6 +4,7 @@ import os
 import pickle
 from problems.tsp.state_tsp import StateTSP
 from utils.beam_search import beam_search
+from utils.mcts import mcts
 
 
 class TSP(object):
@@ -50,6 +51,25 @@ class TSP(object):
         )
 
         return beam_search(state, beam_size, propose_expansions)
+
+    @staticmethod
+    def mcts(input, beam_size, expand_size=None,
+                    compress_mask=False, model=None, max_calc_batch_size=4096):
+
+        assert model is not None, "Provide model"
+
+        fixed = model.precompute_fixed(input)
+
+        def propose_expansions(beam):
+            return model.propose_expansions(
+                beam, fixed, expand_size, normalize=True, max_calc_batch_size=max_calc_batch_size
+            )
+
+        state = TSP.make_state(
+            input, visited_dtype=torch.int64 if compress_mask else torch.uint8
+        )
+
+        return mcts(state, beam_size, propose_expansions)
 
 
 class TSPDataset(Dataset):

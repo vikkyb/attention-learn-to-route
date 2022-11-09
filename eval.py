@@ -140,14 +140,16 @@ def _eval_dataset(model, dataset, width, softmax_temp, opts, device):
                 sequences, costs = model.sample_many(batch, batch_rep=batch_rep, iter_rep=iter_rep)
                 batch_size = len(costs)
                 ids = torch.arange(batch_size, dtype=torch.int64, device=costs.device)
-            else:
-                assert opts.decode_strategy == 'bs'
-
+            elif opts.decode_strategy == 'bs':
                 cum_log_p, sequences, costs, ids, batch_size = model.beam_search(
                     batch, beam_size=width,
                     compress_mask=opts.compress_mask,
                     max_calc_batch_size=opts.max_calc_batch_size
                 )
+            else: 
+                assert opts.decode_strategy == 'bs'
+                model.mcts()
+
 
         if sequences is None:
             sequences = [None] * batch_size
