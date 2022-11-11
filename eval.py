@@ -147,8 +147,10 @@ def _eval_dataset(model, dataset, width, softmax_temp, opts, device):
                     max_calc_batch_size=opts.max_calc_batch_size
                 )
             else: 
-                assert opts.decode_strategy == 'bs'
-                model.mcts()
+                assert opts.decode_strategy == 'mcts'
+
+                # These are the common returns for greedy, sample and beam search
+                sequences, cost, ids, batch_size = model.mcts(timeLimit=opts.time_limit)
 
 
         if sequences is None:
@@ -197,6 +199,8 @@ if __name__ == "__main__":
                         help='Beam search (bs), Sampling (sample) or Greedy (greedy)')
     parser.add_argument('--softmax_temperature', type=parse_softmax_temperature, default=1,
                         help="Softmax temperature (sampling or bs)")
+    parser.add_argument('--time_limit', type=int, 
+                        help='Time in milliseconds to run MCTS')
     parser.add_argument('--model', type=str)
     parser.add_argument('--no_cuda', action='store_true', help='Disable CUDA')
     parser.add_argument('--no_progress_bar', action='store_true', help='Disable progress bar')
