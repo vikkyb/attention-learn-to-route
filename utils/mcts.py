@@ -16,7 +16,7 @@ def scaled_sigmoid(new_length, best_length) -> float:
     Returns:
     result : float
     """
-    extra_scaling_parameter = 5
+    extra_scaling_parameter = 1
     return 1 / (1 + math.exp(extra_scaling_parameter * (new_length - best_length)))
 
 
@@ -37,7 +37,7 @@ def evaluate_tour(graph, tour) -> float:
     """
     tour_length = 0
     for i, node in enumerate(tour):
-        if i != len(tour) - 1:
+        if i < len(tour) - 1:
             # Simple Euclidean distance
             tour_length += np.linalg.norm(graph[node] - graph[tour[i + 1]])
     return tour_length
@@ -83,7 +83,7 @@ class NodeTSP():
         self.tour_lengths = []
        
 
-    def select(self, best_score):
+    def select(self, best_score, eval_mode="mean"):
         """
         Select a child node (if available) and recursively call the select function
         until leaf or terminal node 
@@ -118,9 +118,9 @@ class NodeTSP():
             values = {}
             for child in self._children:
                 if child not in self.tour:
-                    values[self._children[child].current_node] = self._children[child].get_score(best_score)
+                    values[child] = self._children[child].get_score(best_score, eval_mode)
             best_child_key = max(values, key=values.get)
-            return self._children[best_child_key].select(best_score)
+            return self._children[best_child_key].select(best_score, eval_mode)
 
 
     def expand(self):
@@ -156,7 +156,7 @@ class NodeTSP():
 
         if self.is_terminal():
             # Don't perform rollout if terminal, just return the observed length of the generated tour
-            return evaluate_tour(self.graph, self.tour)
+            return evaluate_tour(self.graph, self.tour + [self.tour[0]])
 
         else:
             # Perform rollout
@@ -178,7 +178,8 @@ class NodeTSP():
         """
         copy_available_nodes = deepcopy(self.available_nodes)
         np.random.shuffle(copy_available_nodes)
-        new_tour = self.tour + copy_available_nodes + [0] # DO NOT FORGET TO FINISH ON THE NODE WE STARTED ON
+        new_tour = self.tour + copy_available_nodes + [self.tour[0]] # DO NOT FORGET TO FINISH ON THE NODE WE STARTED ON
+        
         new_tour_length = evaluate_tour(self.graph, new_tour)
         return new_tour_length      
 
@@ -207,7 +208,7 @@ class NodeTSP():
             self.parent.update_recursive(update_value)
 
 
-    def get_score(self, best_score, eval_mode="mean", c_exploration=1, no_explore=False) -> float:
+    def get_score(self, best_score, eval_mode="mean", c_exploration=1.5, no_explore=False) -> float:
         """
         TODO: Rewrite this function to favor legibility
         The score is given by two elements: the q value and the exploration element. Exploration is given by UCT equation without winrate.
@@ -230,28 +231,31 @@ class NodeTSP():
             only set to true in the final evaluation to decide where to move next, disregards the exploration part of UCT
         
         """
+
         assert eval_mode in ["mean", "best"], "eval_mode is not properly set, use best or mean"
-        if len(self.tour_lengths) != 0:
+        # print("Score time", len(self.tour_lengths), self.prior_p, self.parent.tour_lengths)
+        if len(self.tour_lengths) == 0:
+            if no_explore:
+                return 0
+            else:
+                exploration = c_exploration * np.sqrt(np.log(len(self.parent.tour_lengths) + 1) / 1)
+                return len(self.graph)
+                # print("no tour len exploration", exploration)
+        
+        else:
             if eval_mode == "mean":
                 score = np.mean(self.tour_lengths)
             elif eval_mode == "best":
                 score = np.min(self.tour_lengths)
-            q = scaled_sigmoid(score, best_score)
-            if self.parent != None:
-                exploration = c_exploration * np.sqrt(np.log(len(self.parent.tour_lengths) + 1) / len(self.tour_lengths))
-            else:
-                exploration = c_exploration
-
+            # print("Score", score)
+            q = 2 * scaled_sigmoid(score, best_score) 
+            # print("q", q)
+            exploration = c_exploration * np.sqrt(np.log(len(self.parent.tour_lengths) + 1) / len(self.tour_lengths))
+            # print("explore", exploration)
             if no_explore: 
                 return q
             else:
-                return self.prior_p * (q + exploration)
-
-        else:
-            exploration = c_exploration
-            if no_explore: exploration = 0
-                # This should actually never occur but you never know
-            return self.prior_p * exploration
+                return self.prior_p + q + exploration
 
 
     def is_leaf(self) -> bool:
@@ -355,15 +359,17 @@ class MCTS_TSP():
         
         TODO: Finish documentation
         """
+        self.best_outcome = len(self.graph) # reset each time
         for run in range(self.n_runs):
-            selected_node = self.root.select(self.best_score)
+            selected_node = self.root.select(self.best_score, self.eval_mode)
             selected_node.expand()
             outcome = selected_node.rollout(self.n_rollout, self.eval_mode)
             selected_node.backprop(outcome)
             self.best_score = np.min([outcome, self.best_score])
+            self.best_outcome = np.min([self.best_outcome, outcome])
 
         values = {}
         for child in self.root._children:
-            values[self.root._children[child].current_node] = self.root._children[child].get_score(self.best_score, no_explore=True)
-        best_child_key = max(values, key=values.get)
+            values[self.root._children[child].current_node] = np.min(self.root._children[child].tour_lengths)
+        best_child_key = min(values, key=values.get)
         return best_child_key
