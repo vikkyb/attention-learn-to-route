@@ -15,7 +15,7 @@ def scaled_sigmoid(new_length, best_length) -> float:
     Returns:
     result : float
     """
-    extra_scaling_parameter = 10
+    extra_scaling_parameter = 3
     return 1 / (1 + math.exp(extra_scaling_parameter * (best_length - new_length)))
 
 
@@ -34,9 +34,12 @@ def evaluate_tour(graph, tour) -> float:
     tour_length : float
         gives a total traversed length of the tour 
     """
-    tour_length = 0
-    for i, node in enumerate(tour):
-        if i < len(tour) - 1:
-            # Simple Euclidean distance
-            tour_length += np.linalg.norm(graph[node] - graph[tour[i + 1]])
+    ordered_points = graph[tour]
+    tour_length = np.sum(np.sqrt(np.sum(np.diff(ordered_points, axis=0)**2, 1)))
+    # tour_length = 0 
+    # for i, node in enumerate(tour):
+    #     if i < len(tour) - 1:
+    #         # Simple Euclidean distance
+    #         tour_length += np.linalg.norm(graph[node] - graph[tour[i + 1]])
+    # print(tour_length)
     return tour_length
