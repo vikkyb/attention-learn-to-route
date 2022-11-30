@@ -1,49 +1,8 @@
 import numpy as np
-import math
 from copy import deepcopy
+from utils.mcts_utils import evaluate_tour, scaled_sigmoid
 
-def scaled_sigmoid(new_length, best_length) -> float:
-    """
-    Calculate scaled Sigmoid function based on the new length and best length
-
-    Args:
-    new_length : float
-        represents the length score 
-    
-    best_length : float
-        represents the best score seen until then
-
-    Returns:
-    result : float
-    """
-    extra_scaling_parameter = 1
-    return 1 / (1 + math.exp(extra_scaling_parameter * (new_length - best_length)))
-
-
-def evaluate_tour(graph, tour) -> float:
-    """
-    Evaluate a tour on a graph by calculating the length of the tour
-
-    Args:
-    graph : 2D numpy array
-        describes the TSP graph by giving (x, y) coordinates per node
-    
-    tour : list of ints
-        gives the indexes of nodes that were visited in the order they were visited 
-
-    Returns:
-    tour_length : float
-        gives a total traversed length of the tour 
-    """
-    tour_length = 0
-    for i, node in enumerate(tour):
-        if i < len(tour) - 1:
-            # Simple Euclidean distance
-            tour_length += np.linalg.norm(graph[node] - graph[tour[i + 1]])
-    return tour_length
-
-
-class NodeTSP():
+class MCTS_node():
     def __init__(self, graph, current_node, available_nodes, tour, parent, prior_p, is_root=False):
         """
         Create an MCTS node
@@ -134,7 +93,7 @@ class NodeTSP():
             tour_copy.append(n)
             # TODO: Create option for using GNN prior
             prior = 1 # This should be settable when the GNN is implemented
-            self._children[n] = NodeTSP(self.graph, n, new_available_nodes, tour_copy, self, prior)
+            self._children[n] = MCTS_node(self.graph, n, new_available_nodes, tour_copy, self, prior)
 
     
     def rollout(self, n_rollouts, eval_mode="mean"):
@@ -163,8 +122,8 @@ class NodeTSP():
             rollout_outcomes = []
             for r in range(n_rollouts):
                 rollout_outcomes.append(self.one_rollout())
-                if eval_mode == "mean": return np.mean(rollout_outcomes)
-                elif eval_mode == "best": return np.min(rollout_outcomes)
+            if eval_mode == "mean": return np.mean(rollout_outcomes)
+            elif eval_mode == "best": return np.min(rollout_outcomes)
         
     
     def one_rollout(self):
@@ -184,31 +143,20 @@ class NodeTSP():
         return new_tour_length      
 
 
-    def backprop(self, rollout_outcome):
-        """
-        Backpropagate the length to the parent nodes
-
-        Args:
-        rollout_outcome : float
-            rollout_outcome refers to the (best or average) length that should be propagated returned from rollout
-        """
-        self.update_recursive(rollout_outcome)
-    
-
     def update_recursive(self, update_value):
         """
-        Recursively perform updates over the parents' parents given the update value (rollout outcome passed from backprop())
+        Recursively perform updates over the parents' parents given the update value
 
         Args:
         update_value : float
-            identical to rollout_outcome in backprop, (best or average) length that should be propagated returned from rollout
+            length value to be propagated
         """
         self.tour_lengths.append(update_value)
         if self.parent != None:
             self.parent.update_recursive(update_value)
 
 
-    def get_score(self, best_score, eval_mode="mean", c_exploration=1.5, no_explore=False) -> float:
+    def get_score(self, best_score, eval_mode="mean", c_exploration=np.sqrt(2), no_explore=False) -> float:
         """
         TODO: Rewrite this function to favor legibility
         The score is given by two elements: the q value and the exploration element. Exploration is given by UCT equation without winrate.
@@ -247,11 +195,11 @@ class NodeTSP():
                 score = np.mean(self.tour_lengths)
             elif eval_mode == "best":
                 score = np.min(self.tour_lengths)
-            # print("Score", score)
-            q = 2 * scaled_sigmoid(score, best_score) 
-            # print("q", q)
+
+            q = scaled_sigmoid(score, best_score) 
+
             exploration = c_exploration * np.sqrt(np.log(len(self.parent.tour_lengths) + 1) / len(self.tour_lengths))
-            # print("explore", exploration)
+
             if no_explore: 
                 return q
             else:
@@ -302,74 +250,3 @@ class NodeTSP():
             del self._children[node]
         for c in self._children:
             self._children[c].remove_node_from_available(node)
-
-
-class MCTS_TSP():
-    def __init__(self, graph, start_node, n_runs=100, n_rollout=1, gnn_model=None, eval_mode="mean"):
-        """
-        The main MCTS class that is used to model the TSP problem
-        TODO: Finish documentation
-        """
-        self.graph = graph
-        self.current_node = start_node
-        self.tour = [start_node]
-        self.available_nodes = []
-        for i in range(len(graph)): 
-            if i != start_node: self.available_nodes.append(i)
-        self.n_runs = n_runs
-        self.n_rollout = n_rollout
-        self.gnn_model = gnn_model
-        self.eval_mode = eval_mode
-
-        self.best_score = len(graph)
-
-        self.root = NodeTSP(self.graph, self.current_node, self.available_nodes, self.tour, None, 1, True)
-
-
-    def move_to(self, node):
-        """
-        In the tree, move to the supplied node
-
-        Args:
-        node : NodeTSP
-            move to the selected node and update it as the root 
-        """
-        self.root = self.root._children[node]
-        self.tour.append(node)
-        self.root.make_root()
-        self.available_nodes.remove(node)
-        self.root.remove_node_from_available(self)
-
-
-    def update_priors(self, priors):
-        """
-        Update the prior probabilities of the root's children.
-
-        Args:
-        priors : 1d np_array
-            array of size n_nodes containing prior probabilities for those nodes
-        """
-        for c in self.root._children:
-            self.root._children[c].prior_p = priors[c]
-
-
-    def mcts_decide(self):
-        """
-        Perform an MCTS run to find the best action given the current node.
-        
-        TODO: Finish documentation
-        """
-        self.best_outcome = len(self.graph) # reset each time
-        for run in range(self.n_runs):
-            selected_node = self.root.select(self.best_score, self.eval_mode)
-            selected_node.expand()
-            outcome = selected_node.rollout(self.n_rollout, self.eval_mode)
-            selected_node.backprop(outcome)
-            self.best_score = np.min([outcome, self.best_score])
-            self.best_outcome = np.min([self.best_outcome, outcome])
-
-        values = {}
-        for child in self.root._children:
-            values[self.root._children[child].current_node] = np.min(self.root._children[child].tour_lengths)
-        best_child_key = min(values, key=values.get)
-        return best_child_key
