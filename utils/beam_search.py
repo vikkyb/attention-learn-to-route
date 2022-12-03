@@ -45,7 +45,7 @@ def _beam_search(state, beam_size, propose_expansions=None,
 
         # Set all actions to 0, such that the first node is always 0
         if torch.sum(parent) == 0:
-            action = torch.zeros(20).long()
+            action = torch.zeros(parent.size(dim=0)).long()
             beam = beam.expand(parent, action, score=score)
             beam = beam.topk(beam_size)
         else:
