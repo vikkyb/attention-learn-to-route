@@ -30,19 +30,30 @@ def _beam_search(state, beam_size, propose_expansions=None,
     # Initial state
     beams = [beam if keep_states else beam.clear_state()]
 
+    # Need to set the first node in tour to 0
+    init = torch.zeros(20)
+
     # Perform decoding steps
     while not beam.all_finished():
+
+        # Need to set the first node in tour to 0, expands on node when score is set to 0
 
         # Use the model to propose and score expansions
         parent, action, score = beam.propose_expansions() if propose_expansions is None else propose_expansions(beam)
         if parent is None:
             return beams, None
 
-        # Expand and update the state according to the selected actions
-        beam = beam.expand(parent, action, score=score)
+        # Set all actions to 0, such that the first node is always 0
+        if torch.sum(parent) == 0:
+            action = torch.zeros(parent.size(dim=0)).long()
+            beam = beam.expand(parent, action, score=score)
+            beam = beam.topk(beam_size)
+        else:
+            # Expand and update the state according to the selected actions
+            beam = beam.expand(parent, action, score=score)
 
-        # Get topk
-        beam = beam.topk(beam_size)
+            # Get topk
+            beam = beam.topk(beam_size)
 
         # Collect output of step
         beams.append(beam if keep_states else beam.clear_state())
